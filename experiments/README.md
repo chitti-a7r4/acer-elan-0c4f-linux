@@ -1,0 +1,10 @@
+# Research programs
+
+These are the programs used during development. The installation in the top-level README only requires the native patch, build/download tools and systemd settings. The research interfaces have different template formats.
+
+* **community/trial.py** is the memory-only calibration and matching trial. **app.py** and **score_trial.py** are its persistent successor and score comparison. They import elantouch from the pinned project in the sources document and use NumPy, OpenCV, PyUSB and Tk. The later threshold challenge originally used reference scores from an earlier labeled run. Those private inputs are outside this repository.
+* **windows/probe.c** is the WinBio test executable. It uses the Microsoft winbio_adapter.h, winbio_types.h and winbio_err.h headers with a Windows x64 toolchain. Use a separate Wine prefix, the model-specific Acer DLL and this executable together in a scratch directory. A run without arguments tests a blank image. The --frame-stdin mode reads exactly 6,400 bytes of grayscale image data. **capture_one.py** is the original one-touch experiment, expecting sample.exe and wine-prefix beside it. It streams the frame through a pipe.
+* **oem/oem_touch.py** uses the older engine with the upstream examples/elan-oem/probe built against the patched geometry. The experimental GUI uses its own directories under ~/.local/share/acer-oem-touch and ~/.local/share/acer-touch-test. It was run with the community Python capture dependencies and a temporary device-access grant. Its private profiles are unnecessary for the system setup.
+* **oem/native-check.c** uses the private OEM libfprint build and a test template in the OEM format. **test_native.py** drove the three labeled verification groups, using native-check beside the script. Normal enrollment and verification use the standard fprintd commands.
+
+The source archive deliberately excludes personal captures, templates, calibration and score files. None are needed to build the driver or enroll a different user.

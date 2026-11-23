@@ -1,0 +1,25 @@
+#!/bin/sh
+# Build the native port as an ordinary user in a fresh work directory.
+set -eu
+repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+work=${1:-"$repo/.work"}
+revision=3b4a2b16489faeb083c615fb81b793d974d1d6ee
+mkdir -p "$work"
+cd "$work"
+work=$(pwd)
+src="$work/libfprint"
+if [ ! -d "$src" ]; then
+    git init -q "$src"
+    git -C "$src" fetch --depth=1 https://github.com/skrimix/libfprint_elan.git "$revision"
+    git -C "$src" checkout --quiet --detach FETCH_HEAD
+fi
+test "$(git -C "$src" rev-parse HEAD)" = "$revision"
+patch="$repo/patches/elan-0c4f.patch"
+if ! git -C "$src" apply --reverse --check "$patch" 2>/dev/null; then
+    git -C "$src" apply --check "$patch"
+    git -C "$src" apply "$patch"
+fi
+meson setup "$work/build" "$src" -Ddrivers=elan_oem -Dintrospection=false -Ddoc=false \
+    -Dinstalled-tests=false -Dudev_rules=disabled -Dudev_hwdb=disabled
+meson compile -C "$work/build"
+meson test -C "$work/build" --suite unit-tests --print-errorlogs

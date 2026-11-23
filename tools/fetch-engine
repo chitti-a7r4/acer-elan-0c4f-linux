@@ -1,0 +1,14 @@
+#!/bin/sh
+# Fetch the exact engine supported by the pinned upstream loader.
+set -eu
+repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+work=${1:-"$repo/.work"}
+mkdir -p "$work"
+cd "$work"
+temp=$(mktemp -d ./engine-download.XXXXXX)
+trap 'rm -rf "$temp"' EXIT
+url=https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2017/07/2553b5f6-cd54-4cb2-a552-c4ee4d4ebe9a_4394725e4cd2b8d73ab385804e2f9e1e760a4e28.cab
+curl --fail --location --silent --show-error "$url" -o "$temp/driver.cab"
+cabextract -q -d "$temp" -F EngineAdapter.dll "$temp/driver.cab"
+(cd "$temp" && echo '8f9254d10594ff7479741e72d22abec9417807257ac0c7a967ec7eaa8865a9e9  EngineAdapter.dll' | sha256sum -c -)
+mv "$temp/EngineAdapter.dll" ./EngineAdapter.dll

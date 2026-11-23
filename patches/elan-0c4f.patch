@@ -1,0 +1,82 @@
+diff --git a/libfprint/drivers/elan_oem/elan_oem.c b/libfprint/drivers/elan_oem/elan_oem.c
+index 8ffd87f..418e986 100644
+--- a/libfprint/drivers/elan_oem/elan_oem.c
++++ b/libfprint/drivers/elan_oem/elan_oem.c
+@@ -39,7 +39,7 @@
+ 
+ #define FRAME_SIZE ELAN_ENGINE_FRAME_SIZE
+ #define CALIBRATION_ROUNDS 10
+-#define CALIBRATION_STATUS_POLLS 30
++#define CALIBRATION_STATUS_POLLS 120
+ #define CALIBRATION_MAX_DELTA 500
+ /* The firmware reports a finger even on an empty sensor, so a finger is
+  * present when the 90th percentile of the background-subtracted frame exceeds
+@@ -69,6 +69,7 @@ static const ElanOemCmd get_sensor_dim_cmd = { { 0x00, 0x0c }, EP_CMD_IN, 4 };
+ static const ElanOemCmd get_image_cmd = { { 0x00, 0x09 }, EP_IMG_IN, FRAME_SIZE * 2 };
+ static const ElanOemCmd get_calib_status_cmd = { { 0x40, 0x23 }, EP_CMD_IN, 1 };
+ static const ElanOemCmd get_calib_mean_cmd = { { 0x40, 0x24 }, EP_CMD_IN, 2 };
++static const ElanOemCmd activate_cmd = { { 0x40, 0x2a }, EP_CMD_IN, 2 };
+ static const ElanOemCmd led_on_cmd = { { 0x40, 0x31 }, EP_CMD_IN, 0 };
+ static const ElanOemCmd pre_scan_cmd = { { 0x40, 0x3f }, EP_CMD_IN, 1 };
+ static const ElanOemCmd stop_cmd = { { 0x00, 0x0b }, EP_CMD_IN, 0 };
+@@ -419,7 +420,19 @@ capture_run_state (FpiSsm *ssm, FpDevice *dev)
+       break;
+ 
+     case CAPTURE_GET_IMAGE:
+-      if (self->last_read[0] != 0x55)
++      if (self->last_read[0] == 0xaf)
++        {
++          /* Firmware 0165 can report 0xaf between usable frames. Only
++           * 0x55 starts an image read; never count this as a touch. */
++          fpi_ssm_jump_to_state_delayed (ssm, CAPTURE_WAIT_FINGER, POLL_INTERVAL);
++        }
++      else if (self->last_read[0] == 0xff && --self->calib_rounds_left > 0)
++        {
++          self->calib_busy = FALSE;
++          self->calib_polls_left = CALIBRATION_STATUS_POLLS;
++          fpi_ssm_jump_to_state (ssm, CAPTURE_GET_CALIB_STATUS);
++        }
++      else if (self->last_read[0] != 0x55)
+         fpi_ssm_mark_failed (ssm, fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                             "Unexpected finger status 0x%02x",
+                                                             self->last_read[0]));
+@@ -638,12 +651,12 @@ open_run_state (FpiSsm *ssm, FpDevice *dev)
+       break;
+ 
+     case OPEN_CHECK_SENSOR_DIM:
+-      if (self->last_read[0] != ELAN_ENGINE_WIDTH || self->last_read[1] != 0 ||
+-          self->last_read[2] != ELAN_ENGINE_HEIGHT || self->last_read[3] != 0)
++      if (self->last_read[0] + 1 != ELAN_ENGINE_WIDTH || self->last_read[1] != 0 ||
++          self->last_read[2] + 1 != ELAN_ENGINE_HEIGHT || self->last_read[3] != 0)
+         fpi_ssm_mark_failed (ssm, fpi_device_error_new_msg (FP_DEVICE_ERROR_NOT_SUPPORTED,
+                                                             "Unexpected sensor dimensions"));
+       else
+-        fpi_ssm_next_state (ssm);
++        run_cmd (ssm, dev, &activate_cmd, CMD_TIMEOUT);
+       break;
+     }
+ }
+@@ -728,7 +741,7 @@ dev_close (FpDevice *dev)
+ }
+ 
+ static const FpIdEntry id_table[] = {
+-  { .vid = 0x04f3, .pid = 0x0c28 },
++  { .vid = 0x04f3, .pid = 0x0c4f },
+   { .vid = 0, .pid = 0 },
+ };
+ 
+diff --git a/libfprint/drivers/elan_oem/elan_oem_engine.h b/libfprint/drivers/elan_oem/elan_oem_engine.h
+index af27328..c003956 100644
+--- a/libfprint/drivers/elan_oem/elan_oem_engine.h
++++ b/libfprint/drivers/elan_oem/elan_oem_engine.h
+@@ -5,8 +5,8 @@
+ #include <stddef.h>
+ #include <stdint.h>
+ 
+-#define ELAN_ENGINE_WIDTH 96
+-#define ELAN_ENGINE_HEIGHT 96
++#define ELAN_ENGINE_WIDTH 80
++#define ELAN_ENGINE_HEIGHT 80
+ #define ELAN_ENGINE_FRAME_SIZE (ELAN_ENGINE_WIDTH * ELAN_ENGINE_HEIGHT)
+ 
+ // Results besides 0/1; negative values are engine failures.
